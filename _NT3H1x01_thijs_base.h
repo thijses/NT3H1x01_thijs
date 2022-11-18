@@ -72,12 +72,10 @@ class _NT3H1x01_thijs_base
 {
   public:
   //// I2C constants:
-  static const uint8_t slaveAddress = 0x55; //7-bit address
-  static const uint8_t SLA_W = ( slaveAddress <<1) | TW_WRITE;
-  static const uint8_t SLA_R = ( slaveAddress <<1) | TW_READ;
-  const bool is2kvariant;
+  uint8_t slaveAddress; // 7-bit address
+  const bool is2kVariant;
   
-  _NT3H1x01_thijs_base(bool is2kvariant) : is2kvariant(is2kvariant) {}
+  _NT3H1x01_thijs_base(bool is2kVariant, uint8_t address=0x55) : is2kVariant(is2kVariant), slaveAddress(address) {}
   
   #ifdef NT3H1x01_useWireLib // higher level generalized (arduino wire library):
 
@@ -103,7 +101,7 @@ class _NT3H1x01_thijs_base
       // HOWEVER, this function is not implemented on all platforms (looking at you, MSP430!), and it's not that hard to do manually anyway, so:
       Wire.beginTransmission(slaveAddress);
       Wire.write(blockAddress);
-      Wire.endTransmission(); // the generalized Wire library is not always capable of repeated starts (on all platforms)
+      Wire.endTransmission(); // NOTE: should return 0 if all went well (currently not implemented)
       return(_onlyReadBytes(readBuff, NT3H1x01_BLOCK_SIZE));
     }
 
@@ -119,7 +117,7 @@ class _NT3H1x01_thijs_base
       Wire.beginTransmission(slaveAddress);
       Wire.write(NT3H1x01_SESS_REGS_MEMA);
       Wire.write(registerIndex);
-      Wire.endTransmission(); // the generalized Wire library is not always capable of repeated starts (on all platforms)
+      Wire.endTransmission(); // NOTE: should return 0 if all went well (currently not used)
       return(_onlyReadBytes(readBuff, 1));
     }
   
@@ -130,7 +128,7 @@ class _NT3H1x01_thijs_base
      * @return whether it read successfully
      */
     bool _onlyReadBytes(uint8_t readBuff[], uint8_t bytesToRead) {
-      Wire.requestFrom(slaveAddress, bytesToRead);
+      Wire.requestFrom(slaveAddress, bytesToRead); // NOTE: should return number of bytes read (currently not used)
       if(Wire.available() != bytesToRead) { NT3H1x01debugPrint("onlyReadBytes() received insufficient data"); return(false); }
       for(uint8_t i=0; i<bytesToRead; i++) { readBuff[i] = Wire.read(); } // dumb byte-by-byte copy
       // unfortunately, TwoWire.rxBuffer is a private member, so we cant just memcpy. Then again, this implementation is not meant to be efficient
@@ -249,7 +247,7 @@ class _NT3H1x01_thijs_base
     inline bool startWrite() {
       TWCR = twi_START; //send start
       twoWireTransferWait();
-      twiWrite(SLA_W);
+      twiWrite((slaveAddress<<1) | TW_WRITE);
       if(twoWireStatusReg != twi_SR_M_SLA_W_ACK) { NT3H1x01debugPrint("SLA_W ack error"); TWCR = twi_STOP; return(false); }
       return(true);
     }
@@ -257,7 +255,7 @@ class _NT3H1x01_thijs_base
     inline bool startRead() {
       TWCR = twi_START; //repeated start
       twoWireTransferWait();
-      twiWrite(SLA_R);
+      twiWrite((slaveAddress<<1) | TW_READ);
       if(twoWireStatusReg != twi_SR_M_SLA_R_ACK) { NT3H1x01debugPrint("SLA_R ack error"); TWCR = twi_STOP; return(false); }
       return(true);
     }
@@ -476,7 +474,7 @@ class _NT3H1x01_thijs_base
       //   uint8_t CMDbuffer[SIZEOF_I2C_CMD_DESC_T + SIZEOF_I2C_CMD_LINK_T * numberOfCommands] = { 0 };
       //   i2c_cmd_handle_t cmd = i2c_cmd_link_create_static(CMDbuffer, sizeof(CMDbuffer)); //create a CMD sequence
       //   i2c_master_start(cmd);
-      //   i2c_master_write_byte(cmd, SLA_W, ACK_CHECK_EN);
+      //   i2c_master_write_byte(cmd, (slaveAddress<<1) | TW_WRITE, ACK_CHECK_EN);
       //   i2c_master_write_byte(cmd, blockAddress, ACK_CHECK_DIS);
       //   i2c_master_write(cmd, writeBuff, bytesToWrite, ACK_CHECK_DIS);
       //   i2c_master_stop(cmd);
@@ -506,7 +504,7 @@ class _NT3H1x01_thijs_base
       // uint8_t CMDbuffer[SIZEOF_I2C_CMD_DESC_T + SIZEOF_I2C_CMD_LINK_T * numberOfCommands] = { 0 };
       // i2c_cmd_handle_t cmd = i2c_cmd_link_create_static(CMDbuffer, sizeof(CMDbuffer)); //create a CMD sequence
       // i2c_master_start(cmd);
-      // i2c_master_write_byte(cmd, SLA_W, ACK_CHECK_EN);
+      // i2c_master_write_byte(cmd, (slaveAddress<<1) | TW_WRITE, ACK_CHECK_EN);
       // i2c_master_write_byte(cmd, NT3H1x01_SESS_REGS_MEMA, ACK_CHECK_DIS); // TODO: ACK checks...
       // i2c_master_write_byte(cmd, registerIndex, ACK_CHECK_DIS);
       // i2c_master_write_byte(cmd, mask, ACK_CHECK_DIS);

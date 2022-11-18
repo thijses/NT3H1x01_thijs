@@ -21,13 +21,13 @@ The IC has a number of features/contents (which i explain in more detail further
 - Memory-Mirror mode: lets you map the (64byte) SRAM overtop a part of the EEPROM, to save write(/read) cycles
 - Field Detection pin: can be set to react to certain events with a rising and/or falling edge. Pretty nice if you want to save I2C bus time (at the cost of 1 GPIO pin)
 - Watchdog timer: in case the I2C master forgets to indicate that it's done using the memory, the WDT will clear the I2C_LOCKED flag (letting the RF access the memory)
-- Energy harvesting: the NFC host provides wireless power during operation, this IC claims to be capable of 5mA at 2V output (before pullup resistors!)
 
 The I2C interface of the NT3H is somewhat complex
-The I2C address can be changed (by I2C master and NFC host(???)) but by default it's:
+The I2C address can be changed (only by I2C master) but by default it's:
 0b1010101x = 0xAA / 0xAB  including the R/W bit,
 0b01010101 = 0x55  in the unshifted (conventional) way.
 you can modify the I2C address, but only through the I2C address (so you can't really have 2 devices on 1 bus).
+the I2C clock freq can be 100kHz or 400kHz (not sure about arbetrary values inbetween or below)
 
 Both read and write operations are done in 16 byte (not bit!) blocks, with a MEMory Address (MEMA) byte prefix
 meaning that there are 256 blocks of 16 bytes, for a total of 4096 bytes of addressable space.
@@ -163,26 +163,35 @@ setting the LAST_NDEF_BLOCK to match the size of the loaded contents,
 
 
 
-TO check:
+TO check out:
 - responds to I2C general call?
-- changing the I2C address (from I2C and/or from RF)
 - does checking the SRAM_xxx_READY flags clear them?
 - FD pin start of comm vs tag selection
 - soft reset function
-- 328p repeated start in requestReadBytes()
 
 TODO (general):
 - connection check and I2C address change(?!?)
+- continue writing missing functions (see list below)
 - HW testing (STM32)
 - HW testing (ESP32)
 - HW testing (MSP430)
 - HW testing (328p)
 - block writing/reading to/from file/flash/EEPROM/idk   (2kB of data coming from somewhere, going to somewhere!)
-- move platform optimizations to .cpp file
+- check Wire.h function return values for I2C errors
+- test if 'static' vars in the ESP32 functions actually are static (connect 2 sensors?)
 
 TO write (specific functions):
-- set I2C address function
-- set configuration registers AND copy session register data to configuration registers (store it in EEPROM)
+- set/get Session registers
+- set/get configuration registers AND copy session registers data to configuration registers (store it in EEPROM)
+- set/get watchdog timer setting (easy)
+- set/get FD pin function
+- (file writing funtion (mostly setting LAST_NDEF_BLOCK))
+- static lock functions (_setStaticLockBits, staticLockPage, _staticBlockLockPageToChunk, staticBlockLockChunks)
+- dynamic lock functions (_setDynamicLockBits, _dynamicLockPageToChunk, dynamicLockChunks, _dynamicBlockLockPageToChunk, dynamicBlockLockChunks)
+- generalized lock function: lockArea(startBlock,endBlock,roundUp=true)
+- Memory-Mirror mode functions
+- Pass-Through mode functions
+- check ATQA bytes to verify UID size
 
 */
 
@@ -222,14 +231,14 @@ TO write (specific functions):
 #define NT3H1x01_SERIAL_NR_NXP_MF_ID 0x04       // Serial Number manufacturer number (of NXP). Should be the first byte of UID on all NXP tags
 
 #define NT3H1x01_SAK_MEMA 0x00                  // SAK memory block
-#define NT3H1x01_SAK_MEMA_BYTES_START  7        // SAK covers byte 7 (read only)
+#define NT3H1x01_SAK_MEMA_BYTE         7        // SAK covers byte 7 (read only)
 #define NT3H1x01_ATQA_MEMA 0x00                 // ATQA memory block
 #define NT3H1x01_ATQA_MEMA_BYTES_START 8        // ATQA covers bytes 8~9 (read only)
 
 #define NT3H1x01_CAPA_CONT_MEMA 0x00            // Capability Container memory block
 #define NT3H1x01_CAPA_CONT_MEMA_BYTES_START 12  // Capability Container covers bytes 12~15
 static const uint32_t NT3H1x01_CAPA_CONT_DEFAULT_uint32_t[2] = {0xE1106D00, 0xE110EA00};  // Capability Container factory default value (as uint32_t) for the {1k, 2k} variant
-static const uint8_t  NT3H1101_CAPA_CONT_DEFAULT[2][4] = {{0xE1,0x10,0x6D,0x00}, {0xE1,0x10,0xEA,0x00}}; // Capability Container factory default value (as individual bytes) for the {1k, 2k} variant
+static const uint8_t  NT3H1x01_CAPA_CONT_DEFAULT[2][4] = {{0xE1,0x10,0x6D,0x00}, {0xE1,0x10,0xEA,0x00}}; // Capability Container factory default value (as individual bytes) for the {1k, 2k} variant
 
 #define NT3H1x01_STAT_LOCK_MEMA 0x00            // Static Locking bytes memory block
 #define NT3H1x01_STAT_LOCK_MEMA_BYTES_START 10  // Capability Container covers bytes 10~11
@@ -265,6 +274,9 @@ enum NT3H1x01_CONF_SESS_REGS : uint8_t { // you could also do this with just def
 //// NC_REG Session only:
 #define NT3H1x01_NC_REG_PTHRU_bits    0b01000000 // PTHRU_ON_OFF enables Pass-Through mode
 #define NT3H1x01_NC_REG_MIRROR_bits   0b00000010 // SRAM_MIRROR_ON_OFF enables Memory-Mirror mode
+//// REG_LOCK (Configuration only): (there are one-time-program bits, a.k.a. burn bits, and can be set to 1 ONLY ONCE, disabling the changing of the Configuration bytes forever)
+#define NT3H1x01_NC_REG_LOCK_I2C_bits 0b00000010 // PTHRU_ON_OFF enables Pass-Through mode
+#define NT3H1x01_NC_REG_LOCK_RF_bits  0b00000001 // SRAM_MIRROR_ON_OFF enables Memory-Mirror mode
 //// NS_REG (Session only):
 #define NT3H1x01_NS_REG_NDEF_READ_bits  0b10000000 // NDEF_DATA_READ flag is 1 once the RF interface has read the data at address LAST_NDEF_BLOCK (if set). Reading clears flag
 #define NT3H1x01_NS_REG_I2C_LOCKED_bits 0b01000000 // I2C_LOCKED is 1 if I2C has control of memory (arbitration). Should be cleared once the I2C interaction is completely done, may be cleared by WDT
@@ -315,45 +327,163 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
     #endif
   }
   
-  // many function stll to go here!
+  // I'd love to template these _get and _set functions with some kind of pre-processor directive that makes the debugPrint message include the name of the individual function (efficiently)
+  // but alas, i have yet to determine how one would do such a thing (in an even remotely legible way)
+  /**
+   * (private) retrieve an arbetrary set of bytes (into a provided buffer) from a block
+   * @param blockAddress MEMory Address (MEMA) of the block
+   * @param bytesInBlockStart where in the block the relevant data starts (see defines up top)
+   * @param bytesToRead how many bytes are of interest (size of readBuff)
+   * @param readBuff buffer of size (bytesToRead) to put the results in
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE _getBytesFromBlock(uint8_t blockAddress, uint8_t bytesInBlockStart, uint8_t bytesToRead, uint8_t readBuff[]) {
+    if((bytesInBlockStart+bytesToRead) > NT3H1x01_BLOCK_SIZE) { NT3H1x01debugPrint("_getBytesFromBlock() MISUSE!, you're trying to read bytes outside of the buffer"); /* return(err) */ // TODO: find appropriate error
+        bytesInBlockStart=(bytesInBlockStart%NT3H1x01_BLOCK_SIZE); bytesToRead=min((uint8_t)(NT3H1x01_BLOCK_SIZE-bytesInBlockStart), bytesToRead); } // safety measures instead of return()
+    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(blockAddress, _oneBlockBuff); // fetch the whole block
+    if(!_errGood(err)) { NT3H1x01debugPrint("_getBytesFromBlock() read/write error!"); return(err); }
+    for(uint8_t i=0; i<bytesToRead; i++) { readBuff[i] = _oneBlockBuff[i+bytesInBlockStart]; }
+    return(err); // err should always be OK, if it makes it to this point
+  }
+  /**
+   * (private) retrieve an arbetrary set of bytes from a block and force into a (little-endian) value of class T
+   * @param blockAddress MEMory Address (MEMA) of the block
+   * @param bytesInBlockStart where in the block the relevant data starts (see defines up top)
+   * @param littleEndian true for almost all interactions, but ATQA needs false, so there's the option
+   * @return value (or garbage, depending on the unkowable success of the write/read)
+   */
+  template<typename T> 
+  T _getValFromBlock(uint8_t blockAddress, uint8_t bytesInBlockStart, bool littleEndian=true) {
+    T returnVal;
+    if((bytesInBlockStart+sizeof(T)) > NT3H1x01_BLOCK_SIZE) { NT3H1x01debugPrint("_getValFromBlock() MISUSE!, you're trying to read bytes outside of the buffer"); /* return(err) */ } // TODO: find appropriate error
+    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(blockAddress, _oneBlockBuff); // fetch the whole block
+    if(!_errGood(err)) { NT3H1x01debugPrint("_getValFromBlock<>() read/write error!"); return(returnVal); } // note: returns random value, as returnVal was not zero-initialized
+    uint8_t* bytePtrToReturnVal = (uint8_t*) &returnVal;
+    for(uint8_t i=0; i<sizeof(T); i++) { bytePtrToReturnVal[littleEndian ? (sizeof(T)-1-i) : i] = _oneBlockBuff[i+bytesInBlockStart]; } // (little-endian)
+    return(returnVal);
+  }
+
+  /**
+   * (private) overwrite an arbetrary set of bytes in a block (with bytes from a provided buffer)
+   * @param blockAddress MEMory Address (MEMA) of the block
+   * @param bytesInBlockStart where in the block the relevant data starts (see defines up top)
+   * @param bytesToWrite how many bytes are of interest (size of writeBuff)
+   * @param writeBuff buffer of size (bytesToRead) to write into block
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE _setBytesInBlock(uint8_t blockAddress, uint8_t bytesInBlockStart, uint8_t bytesToWrite, uint8_t writeBuff[]) {
+    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(blockAddress, _oneBlockBuff); // fetch the whole block
+    if(blockAddress == NT3H1x01_I2C_ADDR_CHANGE_MEMA) { _oneBlockBuff[0] = (slaveAddress<<1); } // the I2C address byte is write-only, reading it will return the first byte of the UID
+    if(!_errGood(err)) { NT3H1x01debugPrint("_setBytesInBlock() read/write error!"); return(err); }
+    for(uint8_t i=0; i<bytesToWrite; i++) { _oneBlockBuff[i+bytesInBlockStart] = writeBuff[i]; } // overwrite only the desired bytes
+    err = writeMemBlock(blockAddress, _oneBlockBuff);
+    if(!_errGood(err)) { NT3H1x01debugPrint("_setBytesInBlock() write error!"); }
+    return(err); // err should always be OK, if it makes it to this point
+  }
+  /**
+   * (private) overwrite an arbetrary set of bytes in a block (with a (little-endian) value)
+   * @param blockAddress MEMory Address (MEMA) of the block
+   * @param bytesInBlockStart where in the block the relevant data starts (see defines up top)
+   * @param newVal value (of type T) to write into the block
+   * @param littleEndian true for almost all interactions, but ATQA needs false, so there's the option
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  template<typename T> 
+  NT3H1x01_ERR_RETURN_TYPE _setValInBlock(uint8_t blockAddress, uint8_t bytesInBlockStart, T newVal, bool littleEndian=true) {
+    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(blockAddress, _oneBlockBuff); // fetch the whole block
+    if(!_errGood(err)) { NT3H1x01debugPrint("_setValInBlock() read/write error!"); return(err); }
+    uint8_t* bytePtrToNewVal = (uint8_t*) &newVal;
+    for(uint8_t i=0; i<sizeof(T); i++) { _oneBlockBuff[i+bytesInBlockStart] = bytePtrToNewVal[littleEndian ? (sizeof(T)-1-i) : i]; } // (little-endian)
+    return(err);
+  }
+
+/////////////////////////////////////////////////////////////////////////////////////// set functions: //////////////////////////////////////////////////////////
+
+  /**
+   * overwrite the Capability Container (also mentioned as NDEF thingy) with bytes
+   * @param writeBuff 4 byte buffer to write to the CC bytes (i stronly recommend NT3H1x01_CAPA_CONT_DEFAULT[is2kVariant])
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE setCC(uint8_t writeBuff[]) { return(_setBytesInBlock(NT3H1x01_CAPA_CONT_MEMA, NT3H1x01_CAPA_CONT_MEMA_BYTES_START, 4, writeBuff)); }
+  /**
+   * overwrite the Capability Container (also mentioned as NDEF thingy) with a 4byte value
+   * @param newVal 4 byte value (little-endian) to write to the CC bytes (i stronly recommend NT3H1x01_CAPA_CONT_DEFAULT_uint32_t[is2kVariant])
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE setCC(uint32_t newVal) { return(_setValInBlock<uint32_t>(NT3H1x01_CAPA_CONT_MEMA, NT3H1x01_CAPA_CONT_MEMA_BYTES_START, newVal)); }
 
 
+
+  #ifdef NT3H1x01_unlock_burning // functions that can have a permanent consequence)
+    /**
+     * set the I2C address (may brick device(?))
+     * @param newAddress is the new 7bit address (so before shifting and adding R/W bit, just 7 bits)
+     * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+     */
+    NT3H1x01_ERR_RETURN_TYPE setI2Caddress(uint8_t newAddress) { // does not seem to work (yet)
+      #warning("setI2Caddress() does not appear to work (yet!)")
+      NT3H1x01_ERR_RETURN_TYPE err = _setValInBlock<uint8_t>(NT3H1x01_I2C_ADDR_CHANGE_MEMA, NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE, newAddress<<1);
+      if(_errGood(err)) { slaveAddress = newAddress; } // update this object's address byte ONLY IF the transfer seemed to go as intended
+      else { NT3H1x01debugPrint("setI2Caddress() failed!"); }
+      return(err);
+    }
+    #warning("burnRegLockI2C() and burnRegLockRF() are untested!")
+    /**
+     * disables writing to the Configuration register bytes from I2C PERMANENTLY
+     * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+     */
+    NT3H1x01_ERR_RETURN_TYPE burnRegLockI2C() { return(_setValInBlock<uint8_t>(is2kVariant ? NT3H1201_CONF_REGS_MEMA : NT3H1101_CONF_REGS_MEMA, NT3H1x01_CONF_REGS_REG_LOCK_BYTE, NT3H1x01_NC_REG_LOCK_I2C_bits)); }
+    /**
+     * disables writing to the Configuration register bytes from RF PERMANENTLY
+     * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+     */
+    NT3H1x01_ERR_RETURN_TYPE burnRegLockRF() { return(_setValInBlock<uint8_t>(is2kVariant ? NT3H1201_CONF_REGS_MEMA : NT3H1101_CONF_REGS_MEMA, NT3H1x01_CONF_REGS_REG_LOCK_BYTE, NT3H1x01_NC_REG_LOCK_RF_bits)); }
+  #endif // NT3H1x01_unlock_burning
+
+/////////////////////////////////////////////////////////////////////////////////////// get functions: //////////////////////////////////////////////////////////
 
   /**
    * retrieve the Serial Number, a.k.a. UID
    * @param readBuff 7 byte buffer to put the results in
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE getUID(uint8_t readBuff[]) {
-    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(NT3H1x01_SERIAL_NR_MEMA, _oneBlockBuff); // fetch the whole block
-    if(!_errGood(err)) { NT3H1x01debugPrint("getUID() read/write error!"); return(err); }
-    for(uint8_t i=0; i<7; i++) { readBuff[i] = _oneBlockBuff[i+NT3H1x01_SERIAL_NR_MEMA_BYTES_START]; }  // NOTE: NT3H1x01_SERIAL_NR_MEMA_BYTES_START == 0, so it's just a formality for this particular function
-    return(err); // err should always be OK, if it makes it to this point
-  }
-
+  NT3H1x01_ERR_RETURN_TYPE getUID(uint8_t readBuff[]) { return(_getBytesFromBlock(NT3H1x01_SERIAL_NR_MEMA, NT3H1x01_SERIAL_NR_MEMA_BYTES_START, 7, readBuff)); }
   /**
-   * retrieve the Capability Container (also mentioned as NDEF thingy) (this version of the function lets you check for errors)
+   * retrieve the Capability Container (also mentioned as NDEF thingy) (this version of the function lets you check for I2C errors)
    * @param readBuff 4 byte buffer to put the results in (results should match NT3H1x01_CAPA_CONT_DEFAULT)
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE getCC(uint8_t readBuff[]) {
-    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(NT3H1x01_CAPA_CONT_MEMA, _oneBlockBuff); // fetch the whole block
-    if(!_errGood(err)) { NT3H1x01debugPrint("getCC() read/write error!"); return(err); }
-    for(uint8_t i=0; i<4; i++) { readBuff[i] = _oneBlockBuff[i+NT3H1x01_CAPA_CONT_MEMA_BYTES_START]; }
-    return(err); // err should always be OK, if it makes it to this point
-  }
+  NT3H1x01_ERR_RETURN_TYPE getCC(uint8_t readBuff[]) { return(_getBytesFromBlock(NT3H1x01_CAPA_CONT_MEMA, NT3H1x01_CAPA_CONT_MEMA_BYTES_START, 4, readBuff)); }
   /**
-   * retrieve the Capability Container (also mentioned as NDEF thingy) (this version DOES NOT let you check for errors)
+   * retrieve the Capability Container (also mentioned as NDEF thingy) (this version DOES NOT let you check for I2C errors)
    * @return the Capability Container as a uint32_t. result should match NT3H1x01_CAPA_CONT_DEFAULT_uint32_t
    */
-  uint32_t getCC() {
-    NT3H1x01_ERR_RETURN_TYPE err = requestMemBlock(NT3H1x01_CAPA_CONT_MEMA, _oneBlockBuff); // fetch the whole block
-    if(!_errGood(err)) { NT3H1x01debugPrint("getCC() read/write error!"); return(0); }
-    uint32_t returnVal;
-    uint8_t* bytePtrToReturnVal = (uint8_t*) &returnVal;
-    for(uint8_t i=0; i<sizeof(returnVal); i++) { bytePtrToReturnVal[i] = _oneBlockBuff[i+NT3H1x01_CAPA_CONT_MEMA_BYTES_START]; }
-    return(returnVal);
-  }
+  uint32_t getCC() { return(_getValFromBlock<uint32_t>(NT3H1x01_CAPA_CONT_MEMA, NT3H1x01_CAPA_CONT_MEMA_BYTES_START)); }
+  /**
+   * retrieve the ATQA bytes NOTE: datasheet mentions theses bytes are stored LSB first
+   * @param readBuff 2 byte buffer to put the results in(result should match 0x44,0x00)
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE getATQA(uint8_t readBuff[]) { return(_getBytesFromBlock(NT3H1x01_ATQA_MEMA, NT3H1x01_ATQA_MEMA_BYTES_START, 2, readBuff)); }
+  /**
+   * retrieve the ATQA bytes as uint16_t
+   * @param littleEndian allows you to specify whether it should be interpreted LSB-first or MSB first
+   * @return ATQA bytes as a uint16_t.
+   */
+  uint16_t getATQA(bool littleEndian=true) { return(_getValFromBlock<uint16_t>(NT3H1x01_ATQA_MEMA, NT3H1x01_ATQA_MEMA_BYTES_START, littleEndian)); }
+  /**
+   * retrieve the SAK byte
+   * @param readBuff byte pointer to put the result in
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE getSAK(uint8_t readBuff[]) { return(_getBytesFromBlock(NT3H1x01_SAK_MEMA, NT3H1x01_SAK_MEMA_BYTE, 1, readBuff)); }
+  /**
+   * retrieve the SAK byte
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
+   */
+  uint8_t getSAK() { return(_getValFromBlock<uint8_t>(NT3H1x01_SAK_MEMA, NT3H1x01_SAK_MEMA_BYTE)); }
+
+/////////////////////////////////////////////////////////////////////////////////////// debug functions: //////////////////////////////////////////////////////////
 
   /**
    * checks if retrieving the UID works without errors, AND if the first byte matches the manufacturer ID
@@ -373,41 +503,37 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
     uint8_t readBuff[4];
     NT3H1x01_ERR_RETURN_TYPE err = getCC(readBuff); // fetch the Serial Number a.k.a. UID, the 3rd byte of which indicates the size of the tag
     if(!_errGood(err)) { NT3H1x01debugPrint("variantCheck() read/write error!"); return(false); }
-    bool returnBool = (readBuff[2] == NT3H1101_CAPA_CONT_DEFAULT[is2kvariant][2]);
+    bool returnBool = (readBuff[2] == NT3H1x01_CAPA_CONT_DEFAULT[is2kVariant][2]);
     if(!returnBool) { NT3H1x01debugPrint("variantCheck(), CC/NDEF memory size byte did NOT match expectation!"); }
     return(returnBool);
   }
+
+  // uint8_t UIDsizeCheck() { uint8_t tempArr[2]; getATQA(tempArr); return((tempArr[0] >= 0x40) ? 7 : 4); } // getATQA and interpret the 2 bits that indicate the size of the UID
 
 
   // /**
   //  * print out all the configuration values of the sensor (just for debugging)
   //  * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
   //  */
-  // NT3H1x01_ERR_RETURN_TYPE printConfig() { // prints contents of CONF register (somewhat efficiently)
+  // TMP112_ERR_RETURN_TYPE printConfig() { // prints contents of CONF register (somewhat efficiently)
   //   uint8_t readBuff[2]; // instead of calling all the functions above (which may actually take hundreds of millis at the lowest I2C freq this things supports), just get the CONF register once
-  //   NT3H1x01_ERR_RETURN_TYPE readSuccess = requestReadBytes(NT3H1x01_CONF, readBuff, 2);
-  //   #if defined(NT3H1x01_return_esp_err_t)
-  //     if(readSuccess == ESP_OK)
-  //   #elif defined(NT3H1x01_return_i2c_status_e)
-  //     if(readSuccess == I2C_OK)
-  //   #else
-  //     if(readSuccess)
-  //   #endif
+  //   TMP112_ERR_RETURN_TYPE readSuccess = requestReadBytes(TMP112_CONF, readBuff, 2);
+  //   if(_errGood(readSuccess))
   //    {
   //     //Serial.println("printing config: ");
-  //     Serial.print("ShutDown mode: "); Serial.println(readBuff[0] & NT3H1x01_SD_bits);
-  //     Serial.print("Thermostat Mode: "); Serial.println((readBuff[0] & NT3H1x01_TM_bits)>>1);
-  //     Serial.print("POLatiry: "); Serial.println((readBuff[0] & NT3H1x01_POL_bits)>>2);
+  //     Serial.print("ShutDown mode: "); Serial.println(readBuff[0] & TMP112_SD_bits);
+  //     Serial.print("Thermostat Mode: "); Serial.println((readBuff[0] & TMP112_TM_bits)>>1);
+  //     Serial.print("POLatiry: "); Serial.println((readBuff[0] & TMP112_POL_bits)>>2);
   //     static const uint8_t FQbitsToThreshold[4] = {1,2,4,6};
-  //     uint8_t FQbits = (readBuff[0] & NT3H1x01_FQ_bits)>>3 ; // note: should also prevent array index overflow, by its very nature
+  //     uint8_t FQbits = (readBuff[0] & TMP112_FQ_bits)>>3 ; // note: should also prevent array index overflow, by its very nature
   //     Serial.print("Fault Queue: "); Serial.print(FQbits); Serial.print(" = "); Serial.println(FQbitsToThreshold[FQbits]);
-  //     Serial.print("RESolution (should==3): "); Serial.println((readBuff[0] & NT3H1x01_RES_bits)>>5);
-  //     Serial.print("One-Shot status: "); Serial.println((readBuff[0] & NT3H1x01_OS_bits)>>1);
-  //     bool is13bit = readBuff[1] & NT3H1x01_EM_bits;
+  //     Serial.print("RESolution (should==3): "); Serial.println((readBuff[0] & TMP112_RES_bits)>>5);
+  //     Serial.print("One-Shot status: "); Serial.println((readBuff[0] & TMP112_OS_bits)>>1);
+  //     bool is13bit = readBuff[1] & TMP112_EM_bits;
   //     Serial.print("Thermostat Mode: "); Serial.println(is13bit);
-  //     Serial.print("Alert (active==!POL): "); Serial.println((readBuff[1] & NT3H1x01_AL_bits)>>5);
+  //     Serial.print("Alert (active==!POL): "); Serial.println((readBuff[1] & TMP112_AL_bits)>>5);
   //     static const float CRbitsToThreshold[4] = {0.25,1,4,8};
-  //     uint8_t CRbits = (readBuff[1] & NT3H1x01_CR_bits)>>6; // note: should also prevent array index overflow, by its very nature
+  //     uint8_t CRbits = (readBuff[1] & TMP112_CR_bits)>>6; // note: should also prevent array index overflow, by its very nature
   //     Serial.print("Convertsion Rate: "); Serial.print(CRbits); Serial.print(" = "); Serial.println(CRbitsToThreshold[CRbits]);
   //     // also print Thigh and Tlow (assuming 'is13bit' is working correctly):
   //     int16_t ThighInt = getThighInt(is13bit); // assume that, since the first reading went successfully, this one will as well
@@ -415,7 +541,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   //     int16_t TlowInt = getTlowInt(is13bit); // assume that, since the first reading went successfully, this one will as well
   //     Serial.print("Tlow threshold: "); Serial.print(TlowInt); Serial.print(" = "); Serial.println((float)TlowInt * 0.0625);
   //   } else {
-  //     Serial.println("NT3H1x01 failed to read CONF register!");
+  //     Serial.println("TMP112 failed to read CONF register!");
   //   }
   //   return(readSuccess);
   // }
@@ -425,6 +551,19 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   //  * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
   //  */
   // NT3H1x01_ERR_RETURN_TYPE resetConfig() { static uint8_t CONF_default[2]={0x60,0xA0}; return(writeBytes(NT3H1x01_CONF, CONF_default, 2)); } // write the default value (according to datasheet) to CONF register
+  /**
+   * write the defualt value (according to the datasheet) to the CC bytes, indicating the size of the card (make sure to initialize class object appropriately (is2kVariant))
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE resetCC() { return(setCC(NT3H1x01_CAPA_CONT_DEFAULT_uint32_t[is2kVariant])); } // write the default value (according to datasheet) to CONF register
+  // NT3H1x01_ERR_RETURN_TYPE resetCC() { uint8_t tempArr[4]; for(uint8_t i=0;i<4;i++){tempArr[i]=NT3H1x01_CAPA_CONT_DEFAULT[is2kVariant][i];} return(setCC(tempArr)); } // write the default value (according to datasheet) to CONF register
 };
 
 #endif  // NT3H1x01_thijs_h
+
+
+/*
+configuration registers read through RF (hex): 10.00.F8.48.08.01.00.00
+i was not able to switch sectors from the NFC app i used, so the session registers remain a mystery (from RF)
+
+*/
