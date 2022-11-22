@@ -32,22 +32,59 @@
   // note: check the defined BUFFER_LENGTH in Wire.h for the max transmission length (on many platforms)
 #endif
 
+/*  this library can use several different error return types, depending on the platform (and user preference)
+the ESP32 has a general error type, which includes error for I2C
+the STM32 has an enum for I2C errors
+otherwise, just a boolean, indicating general faillure should be enough, especially if you use NT3H1x01debugPrint() effectively
+4 things should be defined: 
+- the xxx_ERR_RETURN_TYPE
+- a basic OK value, like xxx_ERR_RETURN_TYPE_OK
+- a non-I2C error, like xxx_ERR_RETURN_TYPE_OK
+- something to indicate what the error type is (without having to compare the ERR_RETURN_TYPE itself), like xxx_return_esp_err_t or xxx_return_i2c_status_e
 
+*/
 #ifndef NT3H1x01_ERR_RETURN_TYPE  // unless the user already defined it manually
   #define NT3H1x01_ERR_RETURN_TYPE_default  bool
+  #define NT3H1x01_ERR_RETURN_TYPE_default_OK  true
+  #define NT3H1x01_ERR_RETURN_TYPE_default_FAIL false
   #ifdef NT3H1x01_useWireLib
     #define NT3H1x01_ERR_RETURN_TYPE  NT3H1x01_ERR_RETURN_TYPE_default
+    #define NT3H1x01_ERR_RETURN_TYPE_OK  NT3H1x01_ERR_RETURN_TYPE_default_OK
+    #define NT3H1x01_ERR_RETURN_TYPE_FAIL  NT3H1x01_ERR_RETURN_TYPE_default_FAIL
   #elif defined(ARDUINO_ARCH_ESP32) // the ESP32 likes to spit out esp_err_t for most things
     #define NT3H1x01_ERR_RETURN_TYPE  esp_err_t
+    #define NT3H1x01_ERR_RETURN_TYPE_OK  ESP_OK
+    #define NT3H1x01_ERR_RETURN_TYPE_FAIL  ESP_FAIL
     #define NT3H1x01_return_esp_err_t   // to let the code below know that the return type is an esp_err_t
   #elif defined(ARDUINO_ARCH_STM32)
     #define NT3H1x01_ERR_RETURN_TYPE  i2c_status_e
+    #define NT3H1x01_ERR_RETURN_TYPE_OK  I2C_OK
+    #define NT3H1x01_ERR_RETURN_TYPE_FAIL  I2C_ERROR // NOTE: this may cause some debugging confusion (but then again, STM32 I2C is already hard to debug. Just try using WireLib)
     #define NT3H1x01_return_i2c_status_e // to let the code below know that the return type is an esp_err_t
   #else
-    #define NT3H1x01_ERR_RETURN_TYPE  NT3H1x01_ERR_RETURN_TYPE_default
+    #error("failed to define ERR_RETURN_TYPE for some reason")
   #endif
 #endif
-
+#ifndef NT3H1x01_ERR_RETURN_TYPE_OK
+  #warning("NT3H1x01_ERR_RETURN_TYPE was manually defined, but NT3H1x01_ERR_RETURN_TYPE_OK was not!, attempting to infer automatically...")
+  #ifdef NT3H1x01_return_esp_err_t
+    #define NT3H1x01_ERR_RETURN_TYPE_OK  ESP_OK
+  #elif defined(NT3H1x01_return_i2c_status_e)
+    #define NT3H1x01_ERR_RETURN_TYPE_OK  I2C_OK
+  #else
+    #error("when manually defining the NT3H1x01_ERR_RETURN_TYPE, please also define the NT3H1x01_ERR_RETURN_TYPE_OK. See _NT3H1x01_thijs_base.h")
+  #endif
+#endif
+#ifndef NT3H1x01_ERR_RETURN_TYPE_FAIL
+  #warning("NT3H1x01_ERR_RETURN_TYPE was manually defined, but NT3H1x01_ERR_RETURN_TYPE_FAIL was not!, attempting to infer automatically...")
+  #ifdef NT3H1x01_return_esp_err_t
+    #define NT3H1x01_ERR_RETURN_TYPE_FAIL  ESP_FAIL
+  #elif defined(NT3H1x01_return_i2c_status_e)
+    #define NT3H1x01_ERR_RETURN_TYPE_FAIL  I2C_ERROR // NOTE: this may cause some debugging confusion (but then again, STM32 I2C is already hard to debug. Just try using WireLib)
+  #else
+    #error("when manually defining the NT3H1x01_ERR_RETURN_TYPE, please also define the NT3H1x01_ERR_RETURN_TYPE_FAIL. See _NT3H1x01_thijs_base.h")
+  #endif
+#endif
 
 //// some I2C constants
 #define TW_WRITE 0 //https://en.wikipedia.org/wiki/I%C2%B2C  under "Addressing structure"
@@ -75,7 +112,7 @@ class _NT3H1x01_thijs_base
   uint8_t slaveAddress; // 7-bit address
   const bool is2kVariant;
   
-  _NT3H1x01_thijs_base(bool is2kVariant, uint8_t address=0x55) : is2kVariant(is2kVariant), slaveAddress(address) {}
+  _NT3H1x01_thijs_base(bool is2kVariant, uint8_t address=NT3H1x01_DEFAULT_I2C_ADDRESS) : is2kVariant(is2kVariant), slaveAddress(address) {}
   
   #ifdef NT3H1x01_useWireLib // higher level generalized (arduino wire library):
 
@@ -111,14 +148,14 @@ class _NT3H1x01_thijs_base
      * @param readBuff a uint8_t pointer to store the read value in
      * @return whether it wrote/read successfully
      */
-    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t* readBuff) {
+    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t& readBuff) {
       // ideally, i'd use the Wire function: requestFrom(address, quantity, iaddress, isize, sendStop), which lets you send the register through iaddress
       // HOWEVER, this function is not implemented on all platforms (looking at you, MSP430!), and it's not that hard to do manually anyway, so:
       Wire.beginTransmission(slaveAddress);
       Wire.write(NT3H1x01_SESS_REGS_MEMA);
       Wire.write(registerIndex);
       Wire.endTransmission(); // NOTE: should return 0 if all went well (currently not used)
-      return(_onlyReadBytes(readBuff, 1));
+      return(_onlyReadBytes(&readBuff, 1));
     }
   
     /**
@@ -159,7 +196,7 @@ class _NT3H1x01_thijs_base
      * @param mask the bits of the register that regDat should affect
      * @return whether it wrote successfully
      */
-    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
+    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
       Wire.beginTransmission(slaveAddress);
       Wire.write(NT3H1x01_SESS_REGS_MEMA);
       Wire.write(registerIndex);
@@ -299,12 +336,12 @@ class _NT3H1x01_thijs_base
      * @param readBuff a uint8_t pointer to store the read value in
      * @return whether it wrote/read successfully
      */
-    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t* readBuff) {
+    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t& readBuff) {
       if(!startWrite()) { return(false); }
       twiWrite(NT3H1x01_SESS_REGS_MEMA);  //if(twoWireStatusReg != twi_SR_M_DAT_T_ACK) { return(false); } //should be ACK(?)
       twiWrite(registerIndex);  //if(twoWireStatusReg != twi_SR_M_DAT_T_ACK) { return(false); } //should be ACK(?)
       TWCR = twi_STOP; // pretty sure this is preferred, in case I2C_RST_ON_OFF is enabled
-      return(_onlyReadBytes(readBuff, 1));
+      return(_onlyReadBytes(&readBuff, 1));
     }
   
     /**
@@ -355,7 +392,7 @@ class _NT3H1x01_thijs_base
      * @param mask the bits of the register that regDat should affect
      * @return whether it wrote successfully
      */
-    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
+    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
       if(!startWrite()) { return(false); }
       twiWrite(NT3H1x01_SESS_REGS_MEMA);  //if(twoWireStatusReg != twi_SR_M_DAT_T_ACK) { return(false); } //should be ACK(?)
       twiWrite(registerIndex);  //if(twoWireStatusReg != twi_SR_M_DAT_T_ACK) { return(false); } //should be ACK(?)
@@ -430,10 +467,10 @@ class _NT3H1x01_thijs_base
      * @param readBuff a uint8_t pointer to store the read value in
      * @return (esp_err_t or bool) whether it wrote/read successfully
      */
-    NT3H1x01_ERR_RETURN_TYPE requestSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t* readBuff) {
+    NT3H1x01_ERR_RETURN_TYPE requestSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t& readBuff) {
       // for alternate commands (manually selected I2C operations), please refer to AS5600_thijs or TMP112_thijs
       uint8_t requestArr[2] = {NT3H1x01_SESS_REGS_MEMA, registerIndex};
-      esp_err_t err = i2c_master_write_read_device(I2Cport, slaveAddress, requestArr, 1, readBuff, 1, I2Ctimeout / portTICK_RATE_MS); //faster (seems to work fine)
+      esp_err_t err = i2c_master_write_read_device(I2Cport, slaveAddress, requestArr, 1, &readBuff, 1, I2Ctimeout / portTICK_RATE_MS); //faster (seems to work fine)
       if(err != ESP_OK) { NT3H1x01debugPrint(esp_err_to_name(err)); }
       #ifdef NT3H1x01_return_esp_err_t
         return(err);
@@ -467,7 +504,7 @@ class _NT3H1x01_thijs_base
      * @return (esp_err_t or bool) whether it wrote successfully
      */
     NT3H1x01_ERR_RETURN_TYPE writeMemBlock(uint8_t blockAddress, uint8_t writeBuff[], uint8_t bytesToWrite=NT3H1x01_BLOCK_SIZE) {
-      if(bytesToWrite > NT3H1x01_BLOCK_SIZE) {/* PANIC */  NT3H1x01debugPrint("writeMemBlock() can only write in blocks of 16 bytes, not more!"); /* return(false); */ } // TODO: find appropriate return value
+      if(bytesToWrite > NT3H1x01_BLOCK_SIZE) {/* PANIC */  NT3H1x01debugPrint("writeMemBlock() can only write in blocks of 16 bytes, not more!"); return(NT3H1x01_ERR_RETURN_TYPE_FAIL); }
       esp_err_t err;
       // if(bytesToWrite == NT3H1x01_BLOCK_SIZE) {
       //   const uint8_t numberOfCommands = 5; //start, write, write, write, stop
@@ -499,7 +536,7 @@ class _NT3H1x01_thijs_base
      * @param mask the bits of the register that regDat should affect
      * @return (esp_err_t or bool) whether it wrote successfully
      */
-    NT3H1x01_ERR_RETURN_TYPE writeSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
+    NT3H1x01_ERR_RETURN_TYPE writeSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
       // const uint8_t numberOfCommands = 7; //start, write, write, write, write, write, stop
       // uint8_t CMDbuffer[SIZEOF_I2C_CMD_DESC_T + SIZEOF_I2C_CMD_LINK_T * numberOfCommands] = { 0 };
       // i2c_cmd_handle_t cmd = i2c_cmd_link_create_static(CMDbuffer, sizeof(CMDbuffer)); //create a CMD sequence
@@ -566,12 +603,12 @@ class _NT3H1x01_thijs_base
      * @param readBuff a uint8_t pointer to store the read value in
      * @return whether it wrote/read successfully
      */
-    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t* readBuff) {
+    bool requestSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t& readBuff) {
       //twi_setModule(module);  // see init() for explenation
       uint8_t requestArr[2] = {NT3H1x01_SESS_REGS_MEMA, registerIndex};
       int8_t ret = twi_writeTo(slaveAddress, requestArr, 2, 1, true); // transmit 1 byte, wait for the transmission to complete and send a STOP command
       if(ret != 0) { NT3H1x01debugPrint("requestSessRegByte() twi_writeTo error!"); return(false); }
-      return(_onlyReadBytes(readBuff, 1));
+      return(_onlyReadBytes(&readBuff, 1));
     }
   
     /**
@@ -611,7 +648,7 @@ class _NT3H1x01_thijs_base
      * @param mask the bits of the register that regDat should affect
      * @return whether it wrote successfully
      */
-    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
+    bool writeSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
       //twi_setModule(module);  // see init() for explenation
       uint8_t regWriteArr[4] = {NT3H1x01_SESS_REGS_MEMA, registerIndex, mask, regDat};
       int8_t ret = twi_writeTo(slaveAddress, regWriteArr, 4, 1, true); // transmit some bytes, wait for the transmission to complete and send a STOP command
@@ -696,7 +733,7 @@ class _NT3H1x01_thijs_base
      * @param readBuff a uint8_t pointer to store the read value in
      * @return (i2c_status_e or bool) whether it wrote/read successfully
      */
-    NT3H1x01_ERR_RETURN_TYPE requestSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t* readBuff) {
+    NT3H1x01_ERR_RETURN_TYPE requestSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t& readBuff) {
       #if defined(I2C_OTHER_FRAME) // not on all STM32 variants
         _i2c.handle.XferOptions = I2C_OTHER_AND_LAST_FRAME; // (this one i don't understand, but the Wire.h library does it, and without it i get HAL_I2C_ERROR_SIZE~~64 (-> I2C_ERROR~~4))
       #endif
@@ -710,7 +747,7 @@ class _NT3H1x01_thijs_base
           return(false);
         #endif
       }
-      return(_onlyReadBytes(readBuff, 1));
+      return(_onlyReadBytes(&readBuff, 1));
     }
   
     /**
@@ -741,7 +778,7 @@ class _NT3H1x01_thijs_base
      */
     NT3H1x01_ERR_RETURN_TYPE writeMemBlock(uint8_t blockAddress, uint8_t writeBuff[], uint8_t bytesToWrite=NT3H1x01_BLOCK_SIZE) {
       // note: for some alternate (potentially intersting) code, please refer to writeBytes() in AS5600_thijs or TMP112_thijs
-      if(bytesToWrite > NT3H1x01_BLOCK_SIZE) {/* PANIC */  NT3H1x01debugPrint("writeMemBlock() can only write in blocks of 16 bytes, not more!"); /* return(false); */ } // TODO: find appropriate return value
+      if(bytesToWrite > NT3H1x01_BLOCK_SIZE) {/* PANIC */  NT3H1x01debugPrint("writeMemBlock() can only write in blocks of 16 bytes, not more!"); return(NT3H1x01_ERR_RETURN_TYPE_FAIL); }
       #if defined(I2C_OTHER_FRAME) // if the STM32 subfamily is capable of writing without sending a stop
         _i2c.handle.XferOptions = I2C_OTHER_AND_LAST_FRAME; // tell the peripheral it should send a STOP at the end
       #endif
@@ -762,7 +799,7 @@ class _NT3H1x01_thijs_base
      * @param mask the bits of the register that regDat should affect
      * @return (i2c_status_e or bool) whether it wrote successfully
      */
-    NT3H1x01_ERR_RETURN_TYPE writeSessRegByte(NT3H1x01_CONF_SESS_REGS registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
+    NT3H1x01_ERR_RETURN_TYPE writeSessRegByte(NT3H1x01_CONF_SESS_REGS_ENUM registerIndex, uint8_t regDat, uint8_t mask=0xFF) {
       #if defined(I2C_OTHER_FRAME) // if the STM32 subfamily is capable of writing without sending a stop
         _i2c.handle.XferOptions = I2C_OTHER_AND_LAST_FRAME; // tell the peripheral it should send a STOP at the end
       #endif
