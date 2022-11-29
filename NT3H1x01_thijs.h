@@ -638,7 +638,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
     err = writeMemBlock(blockAddress, _oneBlockBuff);
     if(!_errGood(err)) { NT3H1x01debugPrint("_setConfRegBits() write error!"); }
     return(err);
-  } // this one is not just a macro (like _setConfRegVal), because doing a 
+  }
 
   /**
    * overwrite the (whole) NC_REG Configuration register
