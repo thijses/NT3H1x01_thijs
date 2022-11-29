@@ -184,6 +184,7 @@ TODO (general):
 - check Wire.h function return values for I2C errors (for all microcontrollers, to see what values are consistant)
 - test if 'static' vars in the ESP32 functions actually are static (connect 2 sensors?)
 - consider changing to more clearly named NS_REG get macro function names. e.g. SRAM_I2C_READY could be PTHRU_IN (because it indicates incoming data when in Pass-Through mode)
+- generalized memory map struct (also for other libraries). Could just be an enum, i just don't love #define
 
 TO write (specific functions):
 - printConfig() (print contents of Session registers, LAST_NDEF_BLOCK, etc. in a LEGIBLE fashion)
