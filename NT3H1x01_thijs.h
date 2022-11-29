@@ -325,7 +325,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
 {
   public:
   //private:
-  uint8_t _oneBlockBuff[NT3H1x01_BLOCK_SIZE]; // used for user-friendly functions. Initialized here just to (slightly) reduce overhead of repeatedly initializing and cleaning up read buffers
+  uint8_t _oneBlockBuff[NT3H1x01_BLOCK_SIZE]; // used for user-friendly functions. A cache of 1 block of memory, to be used whenever less-than-a-whole-block is to be changed (less memory assignment overhead)
   uint8_t _oneBlockBuffAddress = NT3H1x01_INVALID_MEMA; // indicates the memory address the _oneBlockBuff stores. Use with great caution, and only if speed is an absolute necessity!
   public:
   using _NT3H1x01_thijs_base::_NT3H1x01_thijs_base;
