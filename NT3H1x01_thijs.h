@@ -242,7 +242,7 @@ static const uint32_t NT3H1x01_CAPA_CONT_DEFAULT_uint32_t[2] = {0xE1106D00, 0xE1
 static const uint8_t  NT3H1x01_CAPA_CONT_DEFAULT[2][4] = {{0xE1,0x10,0x6D,0x00}, {0xE1,0x10,0xEA,0x00}}; // Capability Container factory default value (as individual bytes) for the {1k, 2k} variant
 
 #define NT3H1x01_STAT_LOCK_MEMA 0x00            // Static Locking bytes memory block
-#define NT3H1x01_STAT_LOCK_MEMA_BYTES_START 10  // Capability Container covers bytes 10~11
+#define NT3H1x01_STAT_LOCK_MEMA_BYTES_START 10  // Static Locking covers bytes 10~11
 
 #define NT3H1101_DYNA_LOCK_MEMA 0x38            // Dynamic Locking bytes memory block for the 1k variant
 #define NT3H1201_DYNA_LOCK_MEMA 0x78            // Dynamic Locking bytes memory block for the 2k variant
@@ -292,7 +292,7 @@ enum NT3H1x01_FD_OFF_ENUM : uint8_t { // 2bit value to determine what triggers t
 };
 
 //// NC_REG common:
-#define NT3H1x01_NC_REG_I2C_RST_bits  0b10000000 // I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+#define NT3H1x01_NC_REG_I2C_RST_bits  0b10000000 // I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slightly niche)
 #define NT3H1x01_NC_REG_FD_OFF_bits   0b00110000 // FD_OFF determines the behaviour of the FD pin (falling)
 #define NT3H1x01_NC_REG_FD_ON_bits    0b00001100 // FD_ON determines the behaviour of the FD pin (rising)
 #define NT3H1x01_NC_REG_DIR_bits      0b00000001 // TRANSFER_DIR/PTHRU_DIR determines the direction of data in Pass-Through mode, or can disable RF write-access otherwise
@@ -513,7 +513,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   NT3H1x01_ERR_RETURN_TYPE _setSess_NC_oneBit(uint8_t mask, bool newBitVal) { return(writeSessRegByte(NT3H1x01_COMN_REGS_NC_REG_BYTE, newBitVal ? mask : 0, mask)); }
   /**
    * overwrite I2C_RST_ON_OFF bit from the NC_REG Session register
-   * @param newVal I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+   * @param newVal I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slightly niche)
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
    */
   NT3H1x01_ERR_RETURN_TYPE setSess_NC_I2C_RST(bool newVal) { return(_setSess_NC_oneBit(NT3H1x01_NC_REG_I2C_RST_bits, newVal)); } // (just a macro)
@@ -668,7 +668,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
     return(_setConfRegBits(NT3H1x01_COMN_REGS_NC_REG_BYTE, newBitVal ? mask : 0, mask, useCache)); }
   /**
    * overwrite I2C_RST_ON_OFF bit from the NC_REG Configuration register
-   * @param newVal I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+   * @param newVal I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slightly niche)
    * @param useCache (optional!, not recommended, use at own discretion) use data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
    */
@@ -811,7 +811,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   }
   /**
    * retrieve I2C_RST_ON_OFF bit from the NC_REG Session register
-   * @return the I2C_RST_ON_OFF bit (bool)     I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+   * @return the I2C_RST_ON_OFF bit (bool)     I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slightly niche)
    */
   bool getSess_NC_I2C_RST() { return((getSess_NC_REG() & NT3H1x01_NC_REG_I2C_RST_bits) != 0); } // (just a macro)
   /**
@@ -1006,7 +1006,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   /**
    * retrieve I2C_RST_ON_OFF bit from the NC_REG Configuration register
    * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
-   * @return the I2C_RST_ON_OFF bit (bool)     I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+   * @return the I2C_RST_ON_OFF bit (bool)     I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slightly niche)
    */
   bool getConf_NC_I2C_RST(bool useCache=false) { return((getConf_NC_REG(useCache) & NT3H1x01_NC_REG_I2C_RST_bits) != 0); } // (just a macro)
   /**
