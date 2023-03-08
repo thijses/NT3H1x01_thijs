@@ -2,7 +2,7 @@
   "name": "NT3H1x01_thijs",
   "version": "1.0.0",
   "description": "A library for the NT3H1x01 NFC IC",
-  "keywords": "NT3H1x01, I2C",
+  "keywords": "NT3H1101, NT3H1201, I2C",
   "repository":
   {
     "type": "git",

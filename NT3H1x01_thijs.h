@@ -263,7 +263,7 @@ enum NT3H1x01_CONF_SESS_REGS_ENUM : uint8_t { // you could also do this with jus
   NT3H1x01_COMN_REGS_SRAM_MIRROR_BLOCK_BYTE = 2,  // SRAM_MIRROR_BLOCK register location in the conf/sess. registers
   NT3H1x01_COMN_REGS_WDT_LS_BYTE = 3,  // WDT_LS register location in the conf/sess. registers
   NT3H1x01_COMN_REGS_WDT_MS_BYTE = 4,  // WDT_MS register location in the conf/sess. registers
-  NT3H1x01_COMN_REGS_I2C_CLOCK_STR_BYTE = 5,  // I2C_CLOCK_STR register location in the conf/sess. registers     NOTE: claims to be R&W in Conf., but Read only in Sess.
+  NT3H1x01_COMN_REGS_I2C_CLOCK_STR_BYTE = 5,  // I2C_CLOCK_STR register location in the conf/sess. registers     NOTE: Read only in Sess.
 //// configuration registers only:
   NT3H1x01_CONF_REGS_REG_LOCK_BYTE = 6,  // REG_LOCK register location in the conf/sess. registers
 //// session registers only:
@@ -423,7 +423,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
         err = requestMemBlock(blockAddress, _oneBlockBuff); _oneBlockBuffAddress = blockAddress; // fetch the whole block
         if(!_errGood(err)) { NT3H1x01debugPrint("_setBytesInBlock() read/write error!"); _oneBlockBuffAddress = NT3H1x01_INVALID_MEMA; return(err); }
       }
-      if((blockAddress == NT3H1x01_I2C_ADDR_CHANGE_MEMA) && (bytesInBlockStart != NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE)) { _oneBlockBuff[0] = (slaveAddress<<1); } // I2C address byte reads as manufacturer ID
+      if((blockAddress == NT3H1x01_I2C_ADDR_CHANGE_MEMA) && (bytesInBlockStart != NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE)) { _oneBlockBuff[NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE] = (slaveAddress<<1); } // I2C address byte reads as manufacturer ID
       for(uint8_t i=0; i<bytesToWrite; i++) { _oneBlockBuff[i+bytesInBlockStart] = writeBuff[i]; } // overwrite only the desired bytes
     }
     err = writeMemBlock(blockAddress, whichBuffToUse);
@@ -447,7 +447,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
       err = requestMemBlock(blockAddress, _oneBlockBuff); _oneBlockBuffAddress = blockAddress; // fetch the whole block
       if(!_errGood(err)) { NT3H1x01debugPrint("_setValInBlock() read/write error!"); _oneBlockBuffAddress = NT3H1x01_INVALID_MEMA; return(err); }
     }
-    if((blockAddress == NT3H1x01_I2C_ADDR_CHANGE_MEMA) && (bytesInBlockStart != NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE)) { _oneBlockBuff[0] = (slaveAddress<<1); } // I2C address byte reads as manufacturer ID
+    if((blockAddress == NT3H1x01_I2C_ADDR_CHANGE_MEMA) && (bytesInBlockStart != NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE)) { _oneBlockBuff[NT3H1x01_I2C_ADDR_CHANGE_MEMA_BYTE] = (slaveAddress<<1); } // I2C address byte reads as manufacturer ID
     uint8_t* bytePtrToNewVal = (uint8_t*) &newVal;
     for(uint8_t i=0; i<sizeof(T); i++) { _oneBlockBuff[i+bytesInBlockStart] = bytePtrToNewVal[writeMSBfirst ? (sizeof(T)-1-i) : i]; } // (little-endian)
     err = writeMemBlock(blockAddress, _oneBlockBuff);
@@ -573,12 +573,6 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
    */
   NT3H1x01_ERR_RETURN_TYPE setSess_WDT(float newVal) { return(setSess_WDTraw(constrain(newVal,0,(((float)0xFFFF)*NT3H1x01_WDT_RAW_TO_MICROSECONDS)) / NT3H1x01_WDT_RAW_TO_MICROSECONDS)); } // (just a macro)
-  // /**                    ///////////// READ ONLY(?) /////////////
-  //  * overwrite the I2C_CLOCK_STR byte in the Session registers
-  //  * @param newVal I2C clock stretching enable/disable
-  //  * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
-  //  */
-  // NT3H1x01_ERR_RETURN_TYPE setSess_I2C_CLOCK_STR(bool newVal) { return(writeSessRegByte(NT3H1x01_COMN_REGS_I2C_CLOCK_STR_BYTE, newVal, 0x01)); } // (just a macro)
 
   // /**                    ///////////// only 2 bits are R/W, the other 6 are Read-only. This function doesn't really make sense /////////////
   //  * overwrite the (whole) NS_REG Session register
@@ -626,7 +620,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
    * @param useCache (optional!, not recommended, use at own discretion) use data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE _setConfRegBits(uint8_t byteInBlock, uint8_t newVal, uint8_t mask, bool useCache=false) {
+  NT3H1x01_ERR_RETURN_TYPE _setConfRegBits(NT3H1x01_CONF_SESS_REGS_ENUM byteInBlock, uint8_t newVal, uint8_t mask, bool useCache=false) {
     uint8_t blockAddress = (is2kVariant ? NT3H1201_CONF_REGS_MEMA : NT3H1101_CONF_REGS_MEMA);
     NT3H1x01_ERR_RETURN_TYPE err = NT3H1x01_ERR_RETURN_TYPE_OK;
     if( ! (useCache && (blockAddress == _oneBlockBuffAddress))) { // normally true
@@ -675,9 +669,17 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   /**
    * overwrite I2C_RST_ON_OFF bit from the NC_REG Configuration register
    * @param newVal I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
+   * @param useCache (optional!, not recommended, use at own discretion) use data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE setConf_NC_I2C_RST(bool newVal) { return(_setConf_NC_oneBit(NT3H1x01_NC_REG_I2C_RST_bits, newVal)); } // (just a macro)
+  NT3H1x01_ERR_RETURN_TYPE setConf_NC_I2C_RST(bool newVal, bool useCache=false) { return(_setConf_NC_oneBit(NT3H1x01_NC_REG_I2C_RST_bits, newVal, useCache)); } // (just a macro)
+  /**
+   * overwrite TRANSFER_DIR/PTHRU_DIR bit from the NC_REG Configuration register
+   * @param newVal TRANSFER_DIR/PTHRU_DIR bit (bool)     TRANSFER_DIR/PTHRU_DIR determines the direction of data in Pass-Through mode, or can disable RF write-access otherwise
+   * @param useCache (optional!, not recommended, use at own discretion) use data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
+   * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
+   */
+  NT3H1x01_ERR_RETURN_TYPE setConf_NC_DIR(bool newVal, bool useCache=false) { return(_setConf_NC_oneBit(NT3H1x01_NC_REG_DIR_bits, newVal, useCache)); } // (just a macro)
 
   /**
    * overwrite the LAST_NDEF_BLOCK byte in the Configuration registers
@@ -711,11 +713,12 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   /**
    * overwrite the WatchDog Timer threshold in the Configuration registers
    * @param newVal the WatchDog Timer threshold in microseconds
+   * @param useCache (optional!, not recommended, use at own discretion) use data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE setConf_WDT(float newVal) { return(setConf_WDTraw(constrain(newVal,0,(((float)0xFFFF)*NT3H1x01_WDT_RAW_TO_MICROSECONDS)) / NT3H1x01_WDT_RAW_TO_MICROSECONDS)); } // (just a macro)
+  NT3H1x01_ERR_RETURN_TYPE setConf_WDT(float newVal, bool useCache=false) { return(setConf_WDTraw(constrain(newVal,0,(((float)0xFFFF)*NT3H1x01_WDT_RAW_TO_MICROSECONDS)) / NT3H1x01_WDT_RAW_TO_MICROSECONDS, useCache)); } // (just a macro)
   /**
-   * overwrite the I2C_CLOCK_STR byte in the Configuration registers. NOTE: only available for Conf., in Sess. regs the datasheet says I2C_CLOCK_STR is Read-only
+   * overwrite the I2C_CLOCK_STR byte in the Configuration registers. NOTE: in Sess. regs I2C_CLOCK_STR is Read-only
    * @param newVal I2C clock stretching enable/disable
    * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote successfully
@@ -990,9 +993,10 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   /**
    * retrieve the (whole) NC_REG Configuration register (this version of the function lets you check for I2C errors)
    * @param readBuff byte reference to put the result in (see NT3H1x01_NC_REG_xxx_bits defines at top for contents)
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return (bool or esp_err_t or i2c_status_e, see on defines at top) whether it wrote/read successfully
    */
-  NT3H1x01_ERR_RETURN_TYPE getConf_NC_REG(uint8_t& readBuff) { return(_getConfRegBytes(NT3H1x01_COMN_REGS_NC_REG_BYTE, 1, &readBuff)); } // (just a macro)
+  NT3H1x01_ERR_RETURN_TYPE getConf_NC_REG(uint8_t& readBuff, bool useCache=false) { return(_getConfRegBytes(NT3H1x01_COMN_REGS_NC_REG_BYTE, 1, &readBuff, useCache)); } // (just a macro)
   /**
    * retrieve the (whole) NC_REG Configuration register (this version DOES NOT let you check for I2C errors)
    * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
@@ -1001,24 +1005,28 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   uint8_t getConf_NC_REG(bool useCache=false) { return(_getConfRegVal<uint8_t>(NT3H1x01_COMN_REGS_NC_REG_BYTE, true, useCache)); } // (just a macro)
   /**
    * retrieve I2C_RST_ON_OFF bit from the NC_REG Configuration register
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the I2C_RST_ON_OFF bit (bool)     I2C_RST_ON_OFF enables soft-reset through repeated starts in I2C communication (very cool, slighly niche)
    */
-  bool getConf_NC_I2C_RST() { return((getConf_NC_REG() & NT3H1x01_NC_REG_I2C_RST_bits) != 0); } // (just a macro)
+  bool getConf_NC_I2C_RST(bool useCache=false) { return((getConf_NC_REG(useCache) & NT3H1x01_NC_REG_I2C_RST_bits) != 0); } // (just a macro)
   /**
    * retrieve FD_OFF bits from the NC_REG Configuration register
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the FD_OFF bits (2)     FD_OFF determines the behaviour of the FD pin (falling)
    */
-  NT3H1x01_FD_OFF_ENUM getConf_NC_FD_OFF() { return(static_cast<NT3H1x01_FD_OFF_ENUM>((getConf_NC_REG() & NT3H1x01_NC_REG_FD_OFF_bits) >> 4)); } // (just a macro)
+  NT3H1x01_FD_OFF_ENUM getConf_NC_FD_OFF(bool useCache=false) { return(static_cast<NT3H1x01_FD_OFF_ENUM>((getConf_NC_REG(useCache) & NT3H1x01_NC_REG_FD_OFF_bits) >> 4)); } // (just a macro)
   /**
    * retrieve FD_ON bits from the NC_REG Configuration register
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the FD_ON bits (2)     FD_ON determines the behaviour of the FD pin (rising)
    */
-  NT3H1x01_FD_ON_ENUM getConf_NC_FD_ON() { return(static_cast<NT3H1x01_FD_ON_ENUM>((getConf_NC_REG() & NT3H1x01_NC_REG_FD_ON_bits) >> 2)); } // (just a macro)
+  NT3H1x01_FD_ON_ENUM getConf_NC_FD_ON(bool useCache=false) { return(static_cast<NT3H1x01_FD_ON_ENUM>((getConf_NC_REG(useCache) & NT3H1x01_NC_REG_FD_ON_bits) >> 2)); } // (just a macro)
   /**
    * retrieve TRANSFER_DIR/PTHRU_DIR bit from the NC_REG Configuration register
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the TRANSFER_DIR/PTHRU_DIR bit (bool)     TRANSFER_DIR/PTHRU_DIR determines the direction of data in Pass-Through mode, or can disable RF write-access otherwise
    */
-  bool getConf_NC_DIR() { return((getConf_NC_REG() & NT3H1x01_NC_REG_DIR_bits) != 0); } // (just a macro)
+  bool getConf_NC_DIR(bool useCache=false) { return((getConf_NC_REG(useCache) & NT3H1x01_NC_REG_DIR_bits) != 0); } // (just a macro)
 
   /**
    * retrieve the LAST_NDEF_BLOCK byte from the Configuration registers (this version of the function lets you check for I2C errors)
@@ -1061,9 +1069,10 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   uint16_t getConf_WDTraw(bool useCache=false) { return(_getConfRegVal<uint16_t>(NT3H1x01_COMN_REGS_WDT_LS_BYTE, false, useCache)); }
   /**
    * retrieve the WatchDog Timer threshold from the Configuration registers (this version DOES NOT let you check for I2C errors)
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the WatchDog Timer threshold in microseconds
    */
-  float getConf_WDT() { return((float) getConf_WDTraw() * NT3H1x01_WDT_RAW_TO_MICROSECONDS); } // (just a macro)
+  float getConf_WDT(bool useCache=false) { return((float) getConf_WDTraw(useCache) * NT3H1x01_WDT_RAW_TO_MICROSECONDS); } // (just a macro)
   /**
    * retrieve the I2C clock stretching bit from the Configuration registers (this version of the function lets you check for I2C errors)
    * @param readBuff byte reference to put the result in (may be bool?)
@@ -1076,7 +1085,7 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
    * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return the I2C clock stretching bit (bool)
    */
-  bool getConf_I2C_CLOCK_STR(bool useCache=false) { return(_getConfRegVal<uint8_t>(NT3H1x01_CONF_REGS_REG_LOCK_BYTE, true, useCache)); } // (templated as uint8_t then convert to bool) (just a macro)
+  bool getConf_I2C_CLOCK_STR(bool useCache=false) { return(_getConfRegVal<uint8_t>(NT3H1x01_COMN_REGS_I2C_CLOCK_STR_BYTE, true, useCache)); } // (templated as uint8_t then convert to bool) (just a macro)
   /**
    * retrieve the REG_LOCK byte from the Configuration registers (this version of the function lets you check for I2C errors)
    * @param readBuff byte reference to put the result in
@@ -1105,11 +1114,12 @@ class NT3H1x01_thijs : public _NT3H1x01_thijs_base
   }
   /**
    * checks whether the reported memory size matches the expected memory size byte
+   * @param useCache (optional!, not recommended, use at own discretion) fetch data from _oneBlockBuff cache (if possible) instead of actually reading it from I2C (to save a little time).
    * @return true if reading was successful and ...
    */
-  bool variantCheck() {
+  bool variantCheck(bool useCache=false) {
     uint8_t readBuff[4];
-    NT3H1x01_ERR_RETURN_TYPE err = getCC(readBuff); // fetch the Serial Number a.k.a. UID, the 3rd byte of which indicates the size of the tag
+    NT3H1x01_ERR_RETURN_TYPE err = getCC(readBuff, useCache); // fetch the Serial Number a.k.a. UID, the 3rd byte of which indicates the size of the tag
     if(!_errGood(err)) { NT3H1x01debugPrint("variantCheck() read/write error!"); return(false); }
     bool returnBool = (readBuff[2] == NT3H1x01_CAPA_CONT_DEFAULT[is2kVariant][2]);
     if(!returnBool) { NT3H1x01debugPrint("variantCheck(), CC/NDEF memory size byte did NOT match expectation!"); }
